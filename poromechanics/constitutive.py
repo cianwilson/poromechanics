@@ -6,11 +6,23 @@ import ufl
 import dolfinx
 
 class Var_from_yml():
+    """
+    Parse material properties that are included
+    in the .yml file
+    
+    Args: file name
+    """
     def __init__(self,yml_file: str) -> None:
         with open(yml_file, 'r') as file:
             self.inputs = yaml.load(file,Loader=SafeLoader)
             
     def derived_constants(self):
+        """
+        Calculate thermo-poroelastic material properties and append
+        properties to dictionaries
+        
+        Args: None
+        """
         Mech = self.inputs["Mechanical"]
         Hydr = self.inputs["Hydraulic"]
         Therm = self.inputs["Thermal"]
@@ -51,6 +63,9 @@ class Var_from_yml():
         return self.inputs
 
 class dict_to_class():
+    """
+    Transfrom dictionary into class data structrue
+    """
     def __init__(self, /, **kwargs):
         self.__dict__.update(kwargs)
 
@@ -67,6 +82,12 @@ def return_class(i):
     return var.Mechanical,var.Hydraulic,var.Thermal,var.Plastic
 
 class Elastoplasticity():
+    """
+    Constitutive laws for coupled THM problems
+    
+    Args: name, mesh, functions (time: t), old functions (time: t-dt),
+          and initial conditions (time: t0)
+    """
     def __init__(self,name,mesh,functions,old_functions,init_conditions):
         assert type(name) == str, "file name must be a string"
         assert type(mesh) == dolfinx.mesh.Mesh, "mesh must be a dolfinx.mesh"
@@ -130,56 +151,68 @@ class Elastoplasticity():
         self.zero_array = ufl.as_tensor(np.zeros((self.dim,self.dim)))
         
     def total_strain(self):
+        """Current strain: ε = 0.5 * [grad(u) + grad(u).T]"""
         return ufl.sym(ufl.grad(self.u))
     
     def elastic_strain(self):
+        """Current elastic strain: εe = ε - εp - εth"""
         εe = self.total_strain() - self.εp
         εe -= ufl.Identity(self.dim)*self.αL*(self.T-self.T_i) if self.T is not None else self.zero_array
         return εe
     
     def volumetric_strain(self):
+        """Current volumetric strain: εv = div(u)"""
         return ufl.nabla_div(self.u)
     
     def delta_volumetric_strain(self):
+        """Incremental volumetric strain over 1 coupling step"""
         return ufl.nabla_div(self.u) - ufl.nabla_div(self.u_n)
     
     def elastic_deviator_strain(self):
+        """Deviatoric strain: εq = sqrt(2/3 * dev(ε):dev(ε))"""
         ε = self.total_strain()
         ε_q = ufl.sqrt((2/3)*ufl.inner(ufl.dev(ε),ufl.dev(ε)))
         return ufl.conditional(ε_q < self.eps, 0.0, ε_q)
     
     def plastic_deviator_strain(self):
+        """Plastic deviatoric strain: εpq = sqrt(2/3 * dev(εp):dev(εp))"""
         εp_q_ = ufl.sqrt((2/3)*ufl.inner(ufl.dev(self.εp),ufl.dev(self.εp)))
         εp_q = ufl.conditional(εp_q_ < self.eps, 0.0, εp_q_)
         return ufl.variable(εp_q) if self.η is not None else εp_q
     
     def trial_elastic_strain(self):
+        """Elastic trial strain (predictor-corrector): εe = ε - εpn"""
         εe_n = self.total_strain() - self.εp_n
         εe_n -= ufl.Identity(self.dim)*self.αL*(self.T-self.T_i) if self.T is not None else self.zero_array
         return εe_n
         
     def total_stress(self):
+        """Current total stress: σ = C:(ε-εp-εth) - alpha*pI"""
         εe = self.elastic_strain()
         σ = (self.K-2*self.G/3)*ufl.tr(εe)*ufl.Identity(self.dim) + 2*self.G*εe
         σ -= self.α*self.p*ufl.Identity(self.dim) if self.p is not None else self.zero_array
         return σ
     
     def effective_stress(self):
+        """Current terzaghi effective stress: σ' = σ + pI"""
         σ = self.total_stress()
         σ += self.p*ufl.Identity(self.dim) if self.p is not None else self.zero_array
         self.effective_stress_variable(σ)
         return σ
     
     def effective_stress_variable(self,σ):
+        """Create ufl variable to get yield surface derivatives"""
         self.σ_eff = ufl.variable(σ)
     
     def trial_effective_stress(self):
+        """Elastic trial stress:  = C:(ε-εpn-εth) - alpha*pI"""
         εe_n = self.trial_elastic_strain()
         σ = (self.K-2*self.G/3)*ufl.tr(εe_n)*ufl.Identity(self.dim) + 2*self.G*εe_n
         σ += (1-self.α)*self.p*ufl.Identity(self.dim) if self.p is not None else self.zero_array
         return σ
    
     def invariants(self,trial=False):
+        """Stress tensor invariants p = I 1/3 and q = sqrt(3*J2)"""
         σ = self.σ_eff if trial == False else self.trial_effective_stress()
         q_ = ufl.sqrt((3/2)*ufl.inner(ufl.dev(σ),ufl.dev(σ)))
         q = ufl.conditional(q_ < self.eps, 0.0, q_)
@@ -187,32 +220,38 @@ class Elastoplasticity():
         return p,q
         
     def yield_surface(self):
+        """Drucker prager shear yield surface"""
         p,q = self.invariants()
         M = self.η if self.η is not None else self.M_peak
         return q + M*p - self.cohes
 
     def plastic_potential(self):
+        """Drucker prager non-associative plastic potential"""
         p,q = self.invariants()
         M = self.η-self.M_cs if self.η is not None else self.M_psi
         return q + M*p
 
     def plastic_normals(self):
+        """Normal to yield surface and plastic potential"""
         dfdσ = ufl.diff(self.yield_surface(),self.σ_eff)
         dgdσ = ufl.diff(self.plastic_potential(),self.σ_eff)   
         return dfdσ, dgdσ
 
     def softening_modulus(self):
+        """Strain softening/hardening modulus"""
         f = self.yield_surface()
         εp_q = self.plastic_deviator_strain()
         return -ufl.diff(f,self.η)*ufl.diff(self.η,εp_q) if self.η is not None else self.zero
     
     def plastic_modulus(self):
+        """Denominator of the plastic multiplier"""
         H = self.softening_modulus()
         dgdp = self.η-self.M_cs if self.η is not None else self.M_psi
         dfdp = self.η if self.η is not None else self.M_peak
         return 3*self.G + self.K*dgdp*dfdp + H + self.eps
 
     def plastic_multiplier(self):
+        """Magnitude of plastic strain"""
         p,q = self.invariants(trial=True)
         M = self.η if self.η is not None else self.M_peak
         f = q + M*p - self.cohes
@@ -221,18 +260,26 @@ class Elastoplasticity():
         return dλ
     
     def mobilized_friction(self,active):
+        """Current yield surface slope (exponential model)"""
         εp_q = self.plastic_deviator_strain()
         η = self.M_peak - (self.M_peak-self.M_cs)*(1.0-ufl.exp(-self.a_cs*εp_q))
         return self.η - active*η if self.η is not None else self.M_peak
     
     def plastic_strain(self,active):
+        """Compute current plastic strain"""
         _, dgdσ = self.plastic_normals()
         return -(self.εp-self.εp_n) + active*self.plastic_multiplier()*dgdσ
     
     def plastic_consistency(self):
+        """Check if yield criterion is satisfied"""
         return self.plastic_multiplier()*self.yield_surface()
         
     def mass_balance(self,Δt,strain_active):
+        """
+        Pore pressure diffusivity equation
+        
+        Args: time step, volumetric strain rate coupling parameter
+        """
         dεv = self.delta_volumetric_strain()
         eq = (1/self.Mb)*(self.p-self.p_n) + strain_active*self.α*dεv + Δt*ufl.div(self.q)
         if self.T is not None:
@@ -240,10 +287,20 @@ class Elastoplasticity():
         return self.ρf*eq
     
     def darcy_flux(self,Δt,δq):
+        """
+        Darcy flux constitutive law
+        
+        Args: time step, test function
+        """
         eq = (1/self.κ)*ufl.inner(self.q,δq) - self.p*ufl.div(δq)
         return Δt*eq
     
     def energy_balance(self,Δt,δT,advection=False,f=False):
+        """
+        Thermal diffusivity equation
+        
+        Args: time step, test function, advection flag, source term
+        """
         eq = (self.Cv/Δt)*(self.T-self.T_n)*δT + self.kT*ufl.inner(ufl.grad(self.T),ufl.grad(δT))
         if advection:
             # SUPG: Brooks and Hughes, 1982, Comput. Methods Appl. Mech. Eng.
@@ -254,6 +311,3 @@ class Elastoplasticity():
             tau = ufl.CellDiameter(self.mesh)/2/ufl.sqrt(ufl.dot(self.q,self.q)+self.eps)
             eq += self.Cvf*ufl.inner(self.q,ufl.grad(self.T))*δT + tau*ufl.dot(self.q,ufl.grad(δT))*r
         return eq
-    
-    def plastic_consistency(self):
-        return self.yield_surface()*self.plastic_multiplier()
