@@ -3,12 +3,13 @@ import gmsh
 import numpy as np
 
 def mesh_cylindrical_sample(name="Triaxial",d=25e-3,gdim=3,o=1,lc=5e-3,comm=MPI.COMM_WORLD):
-    # d --> sample diameter [m]
-    # 0 --> mesh order
-    # Mesh a cylindrical rock sample that is typically used in triaxial tests
+    """
+    Create a cylindrical mesh on rank 0
+    """
     if comm.rank == 0:
         gmsh.initialize()
         gmsh.model.add(name)
+        gmsh.option.setNumber("General.Terminal",0)
     
         h = 2.5*d # sample height [m]
         

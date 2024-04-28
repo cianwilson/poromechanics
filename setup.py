@@ -5,9 +5,9 @@ with open("README.md", "r") as fh:
   
 setuptools.setup(
     name="poromechanics",
-    version="0.0.1",
+    version="0.0.2",
     author="Matt_McLean",
-    author_email="matthewmclean@utexas.edu",
+    author_email="mclean.l.matthew@gmail.com",
     packages=["poromechanics"],
     description="Coupled geomechanics simulation",
     long_description=description,
