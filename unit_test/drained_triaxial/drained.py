@@ -14,6 +14,7 @@ import gmshapi
 import poromechanics.constitutive as pm
 
 save_results = True
+vis_results = True
 
 """Mesh from Gmsh"""
 name, comm = "drained", MPI.COMM_WORLD
@@ -27,6 +28,7 @@ quad_degree, disp_degree = 2, 2
 Vue = basix.ufl.element("P", mesh.basix_cell(), disp_degree, shape=(mesh.geometry.dim,))
 Vpe = basix.ufl.element("DP", mesh.basix_cell(), 0)
 Vqe = basix.ufl.element("RT", mesh.basix_cell(), 1)
+Vqvise = basix.ufl.element("DP", mesh.basix_cell(), 1, shape=(mesh.geometry.dim,), discontinuous=True)
 
 Qe = basix.ufl.quadrature_element(mesh.basix_cell(), value_shape=(), degree=quad_degree)
 Qeb = basix.ufl.blocked_element(Qe, shape=(mesh.geometry.dim, mesh.geometry.dim), symmetry=True)
@@ -35,6 +37,7 @@ Vu = dolfinx.fem.functionspace(mesh, Vue)
 Vεp = dolfinx.fem.functionspace(mesh, Qeb)
 Vp = dolfinx.fem.functionspace(mesh, Vpe)
 Vq = dolfinx.fem.functionspace(mesh, Vqe)
+Vqvis = dolfinx.fem.functionspace(mesh, Vqvise)
 
 """Integration measures"""
 dx = ufl.Measure("dx", domain=mesh, subdomain_data=subdomains, metadata={"quadrature_degree": quad_degree})
@@ -45,6 +48,7 @@ u = dolfinx.fem.Function(Vu, name="Displacement")
 εp = dolfinx.fem.Function(Vεp, name="Plastic_Strain")
 p = dolfinx.fem.Function(Vp, name="Pore_Pressure")
 q = dolfinx.fem.Function(Vq, name="Darcy_Flux")
+qvis = dolfinx.fem.Function(Vqvis, name="Darcy_Flux")
 
 """Solution variables (t=t-dt)"""
 un = dolfinx.fem.Function(Vu)
@@ -67,6 +71,7 @@ functions = {'displacement': u, 'plastic_strain': εp, 'pressure': p,
 old_functions = {'displacement': un, 'plastic_strain': εpn, 'pressure': pn,
                  'temperature': None}
 init_conditions = {'pressure': pi, 'temperature': None}
+vis_functions = {'displacement': (u,), 'pressure': (p,), 'flux': (qvis, q)}
 
 EP = pm.Elastoplasticity(name,mesh,functions,old_functions,init_conditions)
 
@@ -136,6 +141,15 @@ Volume = dolfinx.fem.assemble_scalar(dolfinx.fem.form(1.0*dx))
 Na = ufl.as_vector([0,0,1])
 Nr = ufl.as_vector([np.sqrt(0.5),np.sqrt(0.5),0])
 
+if vis_results:
+    vtxs = []
+    for fname, funcs in vis_functions.items():
+        if funcs is not None:
+            if len(funcs) > 1:
+              funcs[0].interpolate(funcs[1])
+            vtxs.append(dolfinx.io.VTXWriter(mesh.comm, fname+".bp", funcs[0]))
+            vtxs[-1].write(0.0)
+
 """Loading loop"""
 start = time.time()
 for step, factor in enumerate(load):
@@ -169,6 +183,13 @@ for step, factor in enumerate(load):
     for source, target in zip([u,εp,p], [un,εpn,pn]):
         with source.vector.localForm() as locs, target.vector.localForm() as loct:
             locs.copy(loct)
+
+    if vis_results:
+        for fname, funcs in vis_functions.items():
+            if funcs is not None and len(funcs) > 1:
+                funcs[0].interpolate(funcs[1])
+        for vtx in vtxs:
+            vtx.write(time_[step])
             
 print("\nSimulation Done! Elapsed time: %0.3f minutes" %((time.time()-start)/60))
 

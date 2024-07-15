@@ -14,12 +14,15 @@ import gmshapi
 import poromechanics.constitutive as pm
 
 save_results = True
+vis_results = True
 
 """Mesh from Gmsh"""
 name, comm = "thermal", MPI.COMM_WORLD
 model, gdim, height,elem = gmshapi.mesh_cylindrical_sample()
 mesh, subdomains, boundaries = dolfinx.io.gmshio.model_to_mesh(model, comm, rank=0, gdim=3)
 omega,gamma_s,gamma_t,gamma_b = 1,2,3,4
+
+print('Elements: %d' %(elem,))
 
 """Function spaces"""
 quad_degree, disp_degree = 2, 2
@@ -28,6 +31,7 @@ Vue = basix.ufl.element("P", mesh.basix_cell(), disp_degree, shape=(mesh.geometr
 Vpe = basix.ufl.element("DP", mesh.basix_cell(), 0)
 Vqe = basix.ufl.element("RT", mesh.basix_cell(), 1)
 VTe = basix.ufl.element("P", mesh.basix_cell(), disp_degree-1)
+Vqvise = basix.ufl.element("DP", mesh.basix_cell(), 1, shape=(mesh.geometry.dim,), discontinuous=True)
 
 Qe = basix.ufl.quadrature_element(mesh.basix_cell(), value_shape=(), degree=quad_degree)
 Qeb = basix.ufl.blocked_element(Qe, shape=(mesh.geometry.dim, mesh.geometry.dim), symmetry=True)
@@ -37,6 +41,7 @@ Vεp = dolfinx.fem.functionspace(mesh, Qeb)
 Vp = dolfinx.fem.functionspace(mesh, Vpe)
 Vq = dolfinx.fem.functionspace(mesh, Vqe)
 VT = dolfinx.fem.functionspace(mesh, VTe)
+Vqvis = dolfinx.fem.functionspace(mesh, Vqvise)
 
 """Integration measures"""
 dx = ufl.Measure("dx", domain=mesh, subdomain_data=subdomains, metadata={"quadrature_degree": quad_degree})
@@ -48,6 +53,7 @@ u = dolfinx.fem.Function(Vu, name="Displacement")
 p = dolfinx.fem.Function(Vp, name="Pore_Pressure")
 q = dolfinx.fem.Function(Vq, name="Darcy_Flux")
 T = dolfinx.fem.Function(VT, name="Temperature")
+qvis = dolfinx.fem.Function(Vqvis, name="Darcy_Flux")
 
 """Solution variables (t=t-dt)"""
 un = dolfinx.fem.Function(Vu)
@@ -73,9 +79,11 @@ functions = {'displacement': u, 'plastic_strain': εp, 'pressure': p,
 old_functions = {'displacement': un, 'plastic_strain': εpn, 'pressure': pn,
                  'temperature': Tn}
 init_conditions = {'pressure': pi, 'temperature': Ti}
+vis_functions = {'displacement': (u,), 'pressure': (p,), 'flux': (qvis, q), 'temperature': (T,)}
 
 EP = pm.Elastoplasticity(name,mesh,functions,old_functions,init_conditions)
 
+"""Get stress/strain variables"""
 ε = EP.total_strain()
 εv = EP.volumetric_strain()
 εq = EP.elastic_deviator_strain()
@@ -144,6 +152,15 @@ Volume = dolfinx.fem.assemble_scalar(dolfinx.fem.form(1.0*dx))
 Na = ufl.as_vector([0,0,1])
 Nr = ufl.as_vector([np.sqrt(0.5),np.sqrt(0.5),0])
 
+if vis_results:
+    vtxs = []
+    for fname, funcs in vis_functions.items():
+        if funcs is not None:
+            if len(funcs) > 1:
+              funcs[0].interpolate(funcs[1])
+            vtxs.append(dolfinx.io.VTXWriter(mesh.comm, fname+".bp", funcs[0]))
+            vtxs[-1].write(0.0)
+
 """Loading loop"""
 start = time.time()
 for step, factor in enumerate(load):
@@ -181,6 +198,13 @@ for step, factor in enumerate(load):
         with source.vector.localForm() as locs, target.vector.localForm() as loct:
             locs.copy(loct)
 
+    if vis_results:
+        for fname, funcs in vis_functions.items():
+            if funcs is not None and len(funcs) > 1:
+                funcs[0].interpolate(funcs[1])
+        for vtx in vtxs:
+            vtx.write(time_[step])
+            
 print("\nSimulation Done! Elapsed time: %0.3f minutes" %((time.time()-start)/60))
 
 for key in results:
