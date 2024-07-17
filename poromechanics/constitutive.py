@@ -28,9 +28,13 @@ class Var_from_yml():
         Therm = self.inputs["Thermal"]
         Plas = self.inputs["Plastic"]
         
+        # Bulk modulus
         Mech["K"] = Mech["E"]/3/(1-2*Mech["nu"])
+        # Shear modulus
         Mech["G"] = Mech["E"]/2/(1+Mech["nu"])
+        # Biot coefficient
         Mech["alpha"] = 1 - Mech["K"]/Mech["Ks"]
+        # Biot modulus
         Mech["M"] = (Hydr["phi"]/Mech["Kf"] + (Mech["alpha"]-Hydr["phi"])/Mech["Ks"])**(-1)
         Mech["Ku"] = Mech["K"] + Mech["alpha"]**2 * Mech["M"]
         Mech["B"] = (1-Mech["K"]/Mech["Ku"])/Mech["alpha"]

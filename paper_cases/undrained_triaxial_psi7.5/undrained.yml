@@ -1,16 +1,16 @@
 # Material property file for coupled thermo-poroelastoplastic simulation
-# Drained triaxial test with plastic dilation at yeild
+# Undrained triaxial test with plastic dilation at yeild
 
 Mechanical:
-    E: 5.0e+9  # Young's Modulus [Pa]
+    E: 5.04e+9  # Young's Modulus [Pa]
     nu: 0.26  # Poisson's Ratio [-]
-    Ks: 37.0e+9  # Grain Bulk Modulus [Pa]
-    Kf: 2.15e+9  # Fluid Bulk Modulus [Pa]
+    Ks: 35.0e+9  # Grain Bulk Modulus [Pa]
+    Kf: 2.165450121654501e+9  # Fluid Bulk Modulus [Pa]
     rhos: 2.60e+3  # Graind Density [kg/m3]
 
 Hydraulic:
     phi: 0.20  # Porosity [-]
-    k: 1.0e-13  # Permeability [m^2]
+    k: 1.0e-20  # Permeability [m^2]
     mu: 1.0e-3  # Fluid Viscosity [Pa-s]
     rhof: 1.0e+3  # Fluid Density [kg/m3]
     
@@ -19,8 +19,8 @@ Thermal:
     kf: 10000.0  # Fluid Thermal Conductivity [W/m/K]
     Cps: 8.0e+2  # Grain Heat Capacity [J/kg/K]
     Cpf: 4.2e+3  # Fluid Heat Capacity [J/kg/K]
-    betas: 3.0e-5  # Grain Thermal Expansion [1/K]
-    betaf: 19.8e-5 # Fluid Thermal Expansion [1/K]
+    betas: 6.0e-5  # Grain Thermal Expansion [1/K]
+    betaf: 8.0e-5 # Fluid Thermal Expansion [1/K]
     
 Plastic:
     softening: 0  # Strain-Softening Friction Coefficient [True=1,False=0]

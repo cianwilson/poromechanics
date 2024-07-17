@@ -88,18 +88,18 @@ pinv, qinv = EP.invariants()
 ε_q = EP.elastic_deviator_strain()
 
 """Initialize axial loading (0.1 %/min)"""
-load_rate = 1.042e-06 
+load_rate = 1.0416666666666667e-06   # m/s
 load_factor = dolfinx.fem.Constant(mesh, 0.0)
 plasticity_active = dolfinx.fem.Constant(mesh, 0.0)
 strain_active = dolfinx.fem.Constant(mesh, 0.0)
 
-max_strain = 1.5e-2
-max_disp = max_strain*height
+max_strain = 1.5e-2   # non-d
+max_disp = max_strain*height  # m
 
 kk = 25
-load = np.linspace(0.064, 1.0, int(kk+1.0))
-time_ = load*max_disp/load_rate
-dt = time_[1] - time_[0]
+load = np.linspace(0.064, 1.0, int(kk+1.0)) # seems to start after about 57s
+time_ = load*max_disp/load_rate  # s
+dt = time_[1] - time_[0]   # s
 
 """Variational formulation"""
 pc = dolfinx.fem.Constant(mesh,PETSc.ScalarType(-10.0e6))
@@ -138,6 +138,7 @@ base_dof_u = dolfinx.fem.locate_dofs_topological(Vu.sub(2),mesh.topology.dim-1,b
 
 side_dof_q = dolfinx.fem.locate_dofs_topological(Vq, mesh.topology.dim-1, side_facets)
 q0 = dolfinx.fem.Function(Vq)
+q0.x.array[:] = 0.0
 
 """Results output"""
 results = {'σa': [], 'σr': [], 'εa': [], 'εv': [], 'p': [], 't': [], 'pinv': [], 'qinv': [], 'ε_q': []}
