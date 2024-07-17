@@ -22,6 +22,8 @@ model, gdim, height,elem = gmshapi.mesh_cylindrical_sample()
 mesh, subdomains, boundaries = dolfinx.io.gmshio.model_to_mesh(model, comm, rank=0, gdim=3)
 omega,gamma_s,gamma_t,gamma_b = 1,2,3,4
 
+print('Elements: %d' %(elem,))
+
 """Function spaces"""
 quad_degree, disp_degree = 2, 2
 
@@ -82,6 +84,8 @@ EP = pm.Elastoplasticity(name,mesh,functions,old_functions,init_conditions)
 εpq = EP.plastic_deviator_strain()
 σ = EP.total_stress()
 σ_eff = EP.effective_stress()
+pinv, qinv = EP.invariants()
+ε_q = EP.elastic_deviator_strain()
 
 """Initialize axial loading (0.1 %/min)"""
 load_rate = 1.042e-06 
@@ -136,7 +140,7 @@ side_dof_q = dolfinx.fem.locate_dofs_topological(Vq, mesh.topology.dim-1, side_f
 q0 = dolfinx.fem.Function(Vq)
 
 """Results output"""
-results = {'σa': [], 'σr': [], 'εa': [], 'εv': [], 'p': [], 't': []}
+results = {'σa': [], 'σr': [], 'εa': [], 'εv': [], 'p': [], 't': [], 'pinv': [], 'qinv': [], 'ε_q': []}
 Volume = dolfinx.fem.assemble_scalar(dolfinx.fem.form(1.0*dx))
 Na = ufl.as_vector([0,0,1])
 Nr = ufl.as_vector([np.sqrt(0.5),np.sqrt(0.5),0])
@@ -178,6 +182,9 @@ for step, factor in enumerate(load):
     results['εa'].append(dolfiny.expression.assemble(ufl.dot(ε*Na,Na),dx(omega))/Volume)
     results['εv'].append(dolfiny.expression.assemble(εv,dx(omega))/Volume)
     results['p'].append(dolfiny.expression.assemble(p,dx(omega))/Volume)
+    results['pinv'].append(dolfiny.expression.assemble(pinv,dx(omega))/Volume)
+    results['qinv'].append(dolfiny.expression.assemble(qinv,dx(omega))/Volume)
+    results['ε_q'].append(dolfiny.expression.assemble(ε_q,dx(omega))/Volume)
     results['t'].append(time_[step])
     
     for source, target in zip([u,εp,p], [un,εpn,pn]):
@@ -201,9 +208,18 @@ for key in results:
 εa = np.array(results['εa'])*-1e2
 εv = np.array(results['εv'])*-1e2
 p = np.array(results['p'])/1e6
+pinv = np.array(results['pinv'])/-1e6
+qinv = np.array(results['qinv'])/1e6
+ε_q = np.array(results['ε_q'])*1e2
 t = np.array(results['t'])/60
 
 if save_results:
-    dict_ = {'Axial_stress':σa,'Radial_stress':σr,'Axial_strain':εa,'Volumetric_strain':εv,'Pore_pressure':p,'time':t}
+    dict_ = {'Axial_stress':σa,'Radial_stress':σr,
+             'Axial_strain':εa,'Volumetric_strain':εv,
+             'Pore_pressure':p,
+             'Effective_mean_stress':pinv,
+             'Effective_deviatoric_stress':qinv, 
+             'Deviatoric_strain':ε_q,
+             'time':t}
     df = pd.DataFrame(dict_,dtype=np.float64)
     df.to_csv(f"{name}.csv")
