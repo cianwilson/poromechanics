@@ -28,5 +28,5 @@ Plastic:
     phi_crit: 25.377  # Critical State Friction Angle [deg] (only if softening = 1)
     a: 75.0  # Strain-Softening Exponential Constant [-] (only if softening = 1)
     phi: 30  # Peak Friction Angle [deg] (must be defined)
-    psi: 0  # Peak Dilation Angle [deg] (only if softening = 0)
+    psi: 7.5 # Peak Dilation Angle [deg] (only if softening = 0)
     UCS: 5.0e+6  # Unconfined Compressive Strength [Pa] (must be defined)
